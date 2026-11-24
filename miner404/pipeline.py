@@ -51,8 +51,6 @@ GENERATE_EFFORT = "high"
 SELECT_EFFORT = "medium"
 GENERATE_MAX_OUTPUT = 32768
 SELECT_MAX_OUTPUT = 8192
-DRAFT_PICK_EFFORT = "high"  # the draft pick thinks harder and lists faults first
-DRAFT_PICK_MAX_OUTPUT = 16384
 GARBAGE_PENALTY = 2.0  # added when at least three side views look like garbage (the judge's side guard)
 ASTRA_MAX_OUTPUT = 22000  # five times Sol per token, and the budget guard reserves the whole cap before each call
 EFFORT_MAX_OUTPUT = {"xhigh": 44000, "max": 64000}  # reasoning counts against the cap
@@ -513,6 +511,7 @@ class Step:
     merge: bool = False  # after the rewrite, one call merges parent and child part by part; the selector sees all three
     judge_pick: bool = False  # the child is kept unless a copy of the judge's first stage, on the two level side views, prefers the parent
     nudge: str = ""  # appended to the rewrite text unchanged in meaning, so the round is a fresh draw (a control)
+    info: tuple[str, ...] = ()  # "gate": this rewrite also gets the notes the judge copy wrote when it decided the last round
 
 
 @dataclass(frozen=True)
@@ -624,6 +623,7 @@ class Pipeline:
         self.keep_shots = False  # candidates keep their uncropped side views for judge_pick
         self.end_reserve = 0.0  # credits the round planner leaves for the selection after the last round
         self.merge_base = ""  # the draft the merged draft was built on
+        self.gate_notes = ""  # the judge copy's notes from its last parent/child decision (see judge_pick)
 
     # ----- model calls -----
 
@@ -716,6 +716,7 @@ class Pipeline:
         except (ValueError, TypeError, KeyError, AttributeError):
             return picked
         others = sorted((label for label in labels if label != base), key=lambda label: -len(notes.get(label, {}).get("strengths", [])))[:2]
+        notes.update(self.draft_notes(pool, by, [base, *others]))
 
         def block(label: str, role: str) -> str:
             note = notes.get(label, {})
@@ -730,6 +731,27 @@ class Pipeline:
         if merged is not None and merged.uneven and not picked.uneven:  # uniform scale only
             return picked
         return merged if merged is not None else picked
+
+    def draft_notes(self, pool: ThreadPoolExecutor, by: dict[str, Candidate], chosen: list[str]) -> dict[str, dict]:
+        """One close look per chosen draft: its strengths and weaknesses against the target, from its front views and grid.
+        Drafts whose reply cannot be read keep the shared critique's notes."""
+        image = lambda b: {"type": "input_image", "image_url": data_url(b), "detail": "high"}
+        calls = [Call(CRITIQUE_ID + 1 + k, SOL, prompts.DRAFT_NOTES_SYSTEM,
+                      [{"type": "input_text", "text": "TARGET:"}, self.target, *self.closeup,
+                       {"type": "input_text", "text": "CANDIDATE FRONT VIEWS:"}, image(by[label].front),
+                       {"type": "input_text", "text": "CANDIDATE GRID:"}, image(by[label].sides),
+                       {"type": "input_text", "text": prompts.DRAFT_NOTES_USER}],
+                      "medium", SELECT_MAX_OUTPUT, text=prompts.draft_notes_schema())
+                 for k, label in enumerate(chosen)]
+        found: dict[str, dict] = {}
+        for label, reply in zip(chosen, self.run_stage(pool, calls), strict=True):
+            try:
+                answer = json.loads(reply.output_text) if reply is not None else None
+                found[label] = {"label": label, "strengths": [str(x) for x in answer["strengths"]][:6],
+                                "weaknesses": [str(x) for x in answer["weaknesses"]][:6]}
+            except (ValueError, TypeError, KeyError, AttributeError):
+                continue
+        return found
 
     def fit_rest(self, base: list[Step], index: int, module: Candidate) -> list[Step]:
         """Before round `index` + 1: the fullest plan for the rounds left that the credits and calls left allow. From the plan
@@ -804,6 +826,7 @@ class Pipeline:
         if len(parent.shots) < 2 or len(child.shots) < 2:
             return False
         if child.uneven and not parent.uneven:  # uniform scale only: the even parent stays
+            self.gate_notes = ""
             return False
         image = lambda b: {"type": "input_image", "image_url": data_url(b), "detail": "high"}
         asks = ((parent.shots[0], child.shots[0], "slightly left of the front", True),
@@ -815,14 +838,18 @@ class Pipeline:
             {"type": "input_text", "text": prompts.JUDGE_USER.format(angle_desc=angle)}], SELECT_EFFORT, JUDGE_MAX_OUTPUT,
             text=prompts.judge_schema()) for offset, (first, second, angle, _) in enumerate(asks)]
         gaps = []  # the parent's penalty minus the child's, per reply
-        for (_, _, _, parent_first), reply in zip(asks, self.run_stage(pool, calls), strict=True):
+        notes = []  # (view, parent shown first, the judge copy's issues text)
+        for (_, _, angle, parent_first), reply in zip(asks, self.run_stage(pool, calls), strict=True):
             try:
                 answer = json.loads(reply.output_text) if reply is not None else None
                 one, two = float(answer["penalty_1"]), float(answer["penalty_2"])
             except (ValueError, TypeError, KeyError, AttributeError):
                 continue
             gaps.append(one - two if parent_first else two - one)
-        return bool(gaps) and sum(gaps) / len(gaps) >= -JUDGE_DRAW
+            notes.append((angle, parent_first, str(answer.get("issues", ""))))
+        kept = bool(gaps) and sum(gaps) / len(gaps) >= -JUDGE_DRAW
+        self.gate_notes = judge_notes(notes, kept)
+        return kept
 
     def read_text(self, pool: ThreadPoolExecutor) -> str:
         """TR: one Sol call that transcribes the photo's visible text; the block appended to the module-writing system text,
@@ -1110,7 +1137,7 @@ class Pipeline:
                 if "grid" in entry:
                     score += GRID_WEIGHT * min(10, max(0, int(entry["grid"])))
                 scores.setdefault(label, []).append(score)
-                fixes.setdefault(label, []).extend(str(f) for f in (entry.get("fixes") or entry.get("missed") or [])[:6])
+                fixes.setdefault(label, []).extend(str(f) for f in entry.get("fixes", [])[:6])
         return {
             labels[label].name: Judgement(sum(values) / len(values), list(dict.fromkeys(fixes[label]))[:8])
             for label, values in scores.items()
@@ -1154,7 +1181,7 @@ class Pipeline:
         return alive[0], verdict
 
     def scores(self, pool: ThreadPoolExecutor, candidates: list[Candidate], request_id: int,
-               instructions: str = prompts.SELECT_CLOSE_PLAIN, faults: bool = False) -> dict[str, Judgement]:
+               instructions: str = prompts.SELECT_CLOSE) -> dict[str, Judgement]:
         """Score candidates twice in opposite orders on the front views and the grid; lower is better."""
         ordered = candidates.copy()
         random.Random(f"{self.seed}:{self.digest}:{request_id}").shuffle(ordered)
@@ -1172,10 +1199,8 @@ class Pipeline:
                     {"type": "input_text", "text": f"CANDIDATE {label} GRID:"},
                     {"type": "input_image", "image_url": data_url(labels[label].sides), "detail": "high"},
                 ]
-            calls.append(Call(request_id + offset, SOL, prompts.SELECT_CLOSE if faults else instructions,
-                              content, DRAFT_PICK_EFFORT if faults else SELECT_EFFORT,
-                              DRAFT_PICK_MAX_OUTPUT if faults else SELECT_MAX_OUTPUT,
-                              text=prompts.select_close_schema(list(labels), faults)))
+            calls.append(Call(request_id + offset, SOL, instructions, content, SELECT_EFFORT, SELECT_MAX_OUTPUT,
+                              text=prompts.select_close_schema(list(labels))))
         parts = [self.parse_judgement(labels, [reply]) for labels, reply in zip(maps, self.run_stage(pool, calls), strict=True)]
         judgements = {}
         for name in dict.fromkeys(name for part in parts for name in part):
@@ -1187,11 +1212,11 @@ class Pipeline:
         return judgements
 
     def select(self, pool: ThreadPoolExecutor, candidates: list[Candidate], parents: set[str], keep: int,
-               request_id: int, faults: bool = False) -> list[Candidate]:
+               request_id: int) -> list[Candidate]:
         """The best `keep` candidates. Ties and unjudged candidates keep list order, so list children before parents."""
         if len(candidates) <= keep:
             return candidates
-        judgements = self.scores(pool, candidates, request_id, faults=faults)
+        judgements = self.scores(pool, candidates, request_id)
         if not judgements and parents:  # no verdict at all: an unjudged child must not replace its parent
             return ([c for c in candidates if c.name in parents] + [c for c in candidates if c.name not in parents])[:keep]
 
@@ -1304,6 +1329,13 @@ class Pipeline:
                 even = even.parent
             if not even.uneven:
                 winner = even
+            elif winner.raw:  # every module of the lineage scales the whole object unevenly: drop that scale (uniform scale only)
+                evened = even_scale(winner.raw)
+                if evened != winner.raw:
+                    outcome = self.render_module(winner.name + "e", normalize(evened, self.wrapper), evened)
+                    if isinstance(outcome, Candidate) and not outcome.uneven:
+                        outcome.parent = winner.parent
+                        winner = outcome
             self.best_so_far = winner.source
             for index in range(len(plan.steps), len(plan.steps) + plan.post_pick_steps):
                 kept = self.post_pick(pool, winner, index, plan.post_pick_effort)
@@ -1343,7 +1375,7 @@ class Pipeline:
             return ""
 
     def drafts_kept(self, pool: ThreadPoolExecutor, drafts: list[Candidate], plan: StagePlan) -> list[Candidate]:
-        ordered = self.select(pool, drafts, set(), len(drafts) - 1 if plan.draft_each_start and len(drafts) > plan.draft_keep else plan.draft_keep, SELECT_ID, faults=True)
+        ordered = self.select(pool, drafts, set(), len(drafts) - 1 if plan.draft_each_start and len(drafts) > plan.draft_keep else plan.draft_keep, SELECT_ID)
         ordered = [d for d in ordered if not d.uneven] + [d for d in ordered if d.uneven]  # uniform scale only: even drafts first
         if not plan.draft_each_start or len(drafts) <= plan.draft_keep:
             return ordered
@@ -1370,7 +1402,7 @@ class Pipeline:
                 request_id = REWRITE_BASE * (index + 1) + 10 * position + number
                 if step.feed_fixes and not parent.fixes:
                     parent.fixes = self.reviewed(pool, parent, REVIEW_ID + 10 * (index + 1) + position)
-                extra = self.feedback(step, parent) + step.nudge
+                extra = self.feedback(step, parent) + step.nudge + (self.gate_notes if "gate" in step.info else "")
                 call = self.rewrite_call(request_id, model, effort, parent, focus, extra, step.patch)
                 if step.fallback and not self.fits_keeping(call):
                     call = self.rewrite_call(request_id, *step.fallback, parent, focus, extra, step.patch)
@@ -1509,12 +1541,27 @@ SELECT_EXTRA_CREDITS = 12000  # a third candidate in the round's two selection c
 _NUM = r"-?\d+(?:\.\d+)?(?:e-?\d+)?"
 
 
+def judge_notes(asks: list[tuple[str, bool, str]], kept_child: bool) -> str:
+    """The judge copy's notes from one parent/child decision, phrased for the next rewrite of the module that was kept."""
+    other = "the version before it" if kept_child else "a rewrite that was rejected"
+    lines = []
+    for view, parent_first, issues in asks:
+        issues = issues.strip()
+        if not issues:
+            continue
+        current = 1 if parent_first != kept_child else 2
+        lines.append(f"- {view}: Model {current} is the current module, Model {3 - current} is {other}. {issues[:900]}")
+    return prompts.GATE_NOTES.format(notes="\n".join(lines)) if lines else ""
+
+
 def uneven_scale(raw: str) -> bool:
     """Whether the model's module scales the whole object unevenly: a scale with unequal axes on the returned group or on
-    the chain of groups that holds the whole object (each the only child of the one before)."""
+    the chain of groups that holds the whole object (each the only child of the one before). Children are read from the body
+    of generate() only, so a helper function that names its own parameter like the returned group cannot hide the chain."""
     if not raw:
         return False
     top = "root"
+    scope = raw
     start = raw.find("export default function")
     if start >= 0 and raw.find("{", start) >= 0:
         opened = raw.find("{", start)
@@ -1527,10 +1574,11 @@ def uneven_scale(raw: str) -> bool:
                 if depth == 0:
                     end = at
                     break
-        returned = re.findall(r"\breturn\s+([A-Za-z_$][\w$]*)\s*;", raw[opened:end])
+        scope = raw[opened:end]
+        returned = re.findall(r"\breturn\s+([A-Za-z_$][\w$]*)\s*;", scope)
         top = returned[-1] if returned else top
     kids: dict[str, list[str]] = {}
-    for parent, args in re.findall(r"\b([A-Za-z_$][\w$]*)\.add\(([^()]*(?:\([^()]*\)[^()]*)*)\)", raw):
+    for parent, args in re.findall(r"\b([A-Za-z_$][\w$]*)\.add\(([^()]*(?:\([^()]*\)[^()]*)*)\)", scope):
         for arg in args.split(","):
             arg = arg.strip()
             kids.setdefault(parent, []).append(arg if re.fullmatch(r"[A-Za-z_$][\w$]*", arg) else "<expr>")
@@ -1547,6 +1595,49 @@ def uneven_scale(raw: str) -> bool:
             if len(values) == 3 and len(set(values)) > 1:
                 return True
     return False
+
+def even_scale(raw: str) -> str:
+    """The model's module with the unequal-axis scales removed from the whole-object chain (the groups uneven_scale checks),
+    for the rare lineage in which every module scales the whole object unevenly. Each part keeps its own geometry; the
+    wrapper's fit sizes the result uniformly."""
+    if not raw or not uneven_scale(raw):
+        return raw
+    top = "root"
+    scope = raw
+    start = raw.find("export default function")
+    if start >= 0 and raw.find("{", start) >= 0:
+        opened = raw.find("{", start)
+        depth, end = 0, len(raw)
+        for at in range(opened, len(raw)):
+            if raw[at] == "{":
+                depth += 1
+            elif raw[at] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = at
+                    break
+        scope = raw[opened:end]
+        returned = re.findall(r"\breturn\s+([A-Za-z_$][\w$]*)\s*;", scope)
+        top = returned[-1] if returned else top
+    kids: dict[str, list[str]] = {}
+    for parent, args in re.findall(r"\b([A-Za-z_$][\w$]*)\.add\(([^()]*(?:\([^()]*\)[^()]*)*)\)", scope):
+        for arg in args.split(","):
+            arg = arg.strip()
+            kids.setdefault(parent, []).append(arg if re.fullmatch(r"[A-Za-z_$][\w$]*", arg) else "<expr>")
+    chain, name = [top], top
+    while len(kids.get(name, [])) == 1 and kids[name][0] != "<expr>" and len(chain) < 6:
+        name = kids[name][0]
+        chain.append(name)
+    out = raw
+    for name in chain:
+        n = re.escape(name)
+        out = re.sub(rf"\b{n}\.scale\.[xyz]\s*=(?!=)[^;\n]*;?", "", out)
+
+        def drop(m: re.Match) -> str:
+            values = [a.strip() for a in m.group(1).split(",")]
+            return "" if len(values) == 3 and len(set(values)) > 1 else m.group(0)
+        out = re.sub(rf"\b{n}\.scale\.set\(([^()]*)\)\s*;?", drop, out)
+    return out
 
 
 def judge_shots(front: bytes) -> list[bytes]:
