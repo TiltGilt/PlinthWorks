@@ -1,9 +1,11 @@
-# Three.js miner for photo prompts
+# Prompt image to Three.js
 
-Builds a Three.js module from each prompt photo through the competition witness: several drafts, a selection,
-rewrites checked against renders and a final pick, all within the per-prompt budget.
+Produces a single Three.js module for each prompt image via the competition witness, from drafts, a merge,
+render-checked rewrites and a final pick inside the per-prompt budget. Every module is centered on the origin and
+scaled uniformly to fit the unit cube.
 
-Entry point: `main.py` -> `async generate(image, seed, witness) -> str | None`. The plan is in `miner404/versions.py`.
+Entry point: `main.py` -> `async generate(image, seed, witness) -> str | None`. The plan is `ACTIVE_PLAN` in
+`miner404/versions.py`.
 
 ## Live run
 
@@ -19,3 +21,7 @@ Create `witness.json` next to `main.py`, with `witness_url` set to `https://witn
 ```sh
 .venv-live/bin/python main.py --prompts prompts.txt --seed PUBLISHED_SEED --wallet-name NAME --wallet-hotkey HOTKEY
 ```
+
+## Third-party code
+
+`miner404/patch.py` and the SEARCH/REPLACE edit format come from kaito0311/3d-gen-sub (MIT License, see `NOTICE.md`).

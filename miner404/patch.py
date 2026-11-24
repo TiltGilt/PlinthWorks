@@ -1,5 +1,3 @@
-# Origin: kaito0311/3d-gen-sub@1b32e25f8564 worker/patch.py (MIT License, Copyright (c) 2026 The authors), copied unchanged
-# except this header. beat-all L3 uses it for the optional patch-edit rewrite step (Step.patch).
 from __future__ import annotations
 
 import re
@@ -10,10 +8,10 @@ _BLOCK = re.compile(r"^<{5,9} ?SEARCH[ \t]*\n(.*?)^={5,9}[ \t]*\n(.*?)^>{5,9} ?R
 
 @dataclass
 class PatchResult:
-    code: str | None  # the patched module; None when nothing applied (keep the previous module)
+    code: str | None
     applied: int = 0
-    skipped: list[str] = field(default_factory=list)  # one reason per skipped block
-    full: bool = False  # the reply was a whole module, not blocks
+    skipped: list[str] = field(default_factory=list)
+    full: bool = False
 
 
 def blocks(reply: str) -> list[tuple[str, str]]:
@@ -25,7 +23,6 @@ def _rstrip_lines(text: str) -> str:
 
 
 def _replace_once(code: str, search: str, replace: str) -> tuple[str | None, str]:
-    """The code with `search` replaced once, or None and the reason it could not be."""
     if not search.strip():
         return None, "empty SEARCH"
     n = code.count(search)
@@ -33,7 +30,6 @@ def _replace_once(code: str, search: str, replace: str) -> tuple[str | None, str
         return code.replace(search, replace, 1), ""
     if n > 1:
         return None, f"SEARCH found {n} times"
-    # trailing spaces differ: match on right-stripped lines, then map back to the original line span
     lines, want = code.split("\n"), _rstrip_lines(search).rstrip("\n").split("\n")
     stripped = [line.rstrip() for line in lines]
     hits = [i for i in range(len(lines) - len(want) + 1) if stripped[i:i + len(want)] == want]
@@ -45,7 +41,6 @@ def _replace_once(code: str, search: str, replace: str) -> tuple[str | None, str
 
 
 def apply(code: str, reply: str, extract_full) -> PatchResult:
-    """Apply the reply's blocks to `code`; `extract_full(reply)` returns a whole module from the reply or None."""
     found = blocks(reply)
     if not found:
         full = extract_full(reply)

@@ -1,7 +1,39 @@
-"""The plan this submission runs."""
-
-from __future__ import annotations
-
 from .pipeline import Draft, StagePlan, Step
 
-ACTIVE_PLAN = StagePlan(drafts=(Draft(start='plain', model='gpt-6.1-sol', effort='high'), Draft(start='proportions', model='gpt-6.1-sol', effort='high'), Draft(start='plain', model='gpt-6.1-sol', effort='high'), Draft(start='proportions', model='gpt-6.1-sol', effort='high'), Draft(start='plain', model='gpt-6.1-sol', effort='high'), Draft(start='proportions', model='gpt-6.1-sol', effort='high')), steps=(Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), lineage=(), keep=0, focus=('materials', 'shape'), each_lineage=True, fallback=None, tie_parent=False, feed_fixes=False, feed_history=False, feed_diffs=False, patch=False, merge=False, judge_pick=True, nudge=''), Step(rewrites=(('gpt-6-astra', 'high'),), lineage=(), keep=0, focus=('materials', 'shape'), each_lineage=True, fallback=None, tie_parent=False, feed_fixes=False, feed_history=False, feed_diffs=False, patch=False, merge=False, judge_pick=True, nudge=''), Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), lineage=(), keep=0, focus=(), each_lineage=True, fallback=('gpt-6.1-sol', 'high'), tie_parent=False, feed_fixes=False, feed_history=False, feed_diffs=False, patch=False, merge=False, judge_pick=True, nudge=''), Step(rewrites=(('gpt-6.1-sol', 'max'),), lineage=(), keep=0, focus=(), each_lineage=True, fallback=('gpt-6.1-sol', 'xhigh'), tie_parent=False, feed_fixes=False, feed_history=False, feed_diffs=False, patch=False, merge=False, judge_pick=True, nudge='', info=('gate',)), Step(rewrites=(('gpt-6-astra', 'high'),), lineage=(), keep=0, focus=(), each_lineage=True, fallback=None, tie_parent=False, feed_fixes=False, feed_history=False, feed_diffs=False, patch=False, merge=False, judge_pick=True, nudge='', info=('gate',)), Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), lineage=(), keep=0, focus=(), each_lineage=True, fallback=('gpt-6.1-sol', 'high'), tie_parent=False, feed_fixes=False, feed_history=False, feed_diffs=False, patch=False, merge=False, judge_pick=True, nudge=' Before anything else, compare the reference photo with the current model for small visible details that the model leaves out or simplifies, and add or sharpen the most visible of them, keeping the overall shape, proportions, pose and colours as they are.', info=('gate',)), Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), lineage=(), keep=0, focus=(), each_lineage=True, fallback=('gpt-6.1-sol', 'high'), tie_parent=False, feed_fixes=False, feed_history=False, feed_diffs=False, patch=False, merge=False, judge_pick=True, nudge=' Before anything else, compare the reference photo with the current model for small visible details that the model leaves out or simplifies, and add or sharpen the most visible of them, keeping the overall shape, proportions, pose and colours as they are.'), Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), lineage=(), keep=0, focus=(), each_lineage=True, fallback=('gpt-6.1-sol', 'high'), tie_parent=False, feed_fixes=False, feed_history=False, feed_diffs=False, patch=False, merge=False, judge_pick=True, nudge=' Before anything else, compare the reference photo with the current model for small visible details that the model leaves out or simplifies, and add or sharpen the most visible of them, keeping the overall shape, proportions, pose and colours as they are.'), Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), lineage=(), keep=0, focus=(), each_lineage=True, fallback=('gpt-6.1-sol', 'high'), tie_parent=False, feed_fixes=False, feed_history=False, feed_diffs=False, patch=False, merge=False, judge_pick=True, nudge=' Before anything else, compare the reference photo with the current model for small visible details that the model leaves out or simplifies, and add or sharpen the most visible of them, keeping the overall shape, proportions, pose and colours as they are.'), Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), lineage=(), keep=0, focus=(), each_lineage=True, fallback=('gpt-6.1-sol', 'high'), tie_parent=False, feed_fixes=False, feed_history=False, feed_diffs=False, patch=False, merge=False, judge_pick=True, nudge=' Before anything else, compare the reference photo with the current model for small visible details that the model leaves out or simplifies, and add or sharpen the most visible of them, keeping the overall shape, proportions, pose and colours as they are.'), Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), lineage=(), keep=0, focus=(), each_lineage=True, fallback=('gpt-6.1-sol', 'high'), tie_parent=False, feed_fixes=False, feed_history=False, feed_diffs=True, patch=True, merge=False, judge_pick=True, nudge=' Before anything else, compare the reference photo with the current model for small visible details that the model leaves out or simplifies, and add or sharpen the most visible of them, keeping the overall shape, proportions, pose and colours as they are.')), draft_keep=1, draft_each_start=True, fill=0.999, measured=False, outline_fit=False, check=False, budget_plan=False, plan_rounds=0, astra_last=False, replan=False, merge_pick=True, outline_fit_last=True, post_pick_effort='xhigh', post_pick_steps=0)
+NUDGE = (" Before anything else, compare the reference photo with the current model for small visible details that the model "
+         "leaves out or simplifies, and add or sharpen the most visible of them, keeping the overall shape, proportions, pose "
+         "and colours as they are.")
+
+ACTIVE_PLAN = StagePlan(
+    drafts=(
+        Draft(start='plain', model='gpt-6.1-sol', effort='high'),
+        Draft(start='proportions', model='gpt-6.1-sol', effort='high'),
+        Draft(start='plain', model='gpt-6.1-sol', effort='high'),
+        Draft(start='proportions', model='gpt-6.1-sol', effort='high'),
+        Draft(start='plain', model='gpt-6.1-sol', effort='high'),
+        Draft(start='proportions', model='gpt-6.1-sol', effort='high'),
+    ),
+    steps=(
+        Step(rewrites=(('gpt-6.1-sol', 'high'),), focus=('materials', 'shape')),
+        Step(
+            rewrites=(('gpt-6-astra', 'high'),),
+            focus=('materials', 'shape'),
+            fallback=('gpt-6.1-sol', 'xhigh'),
+        ),
+        Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), fallback=('gpt-6.1-sol', 'high')),
+        Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), fallback=('gpt-6.1-sol', 'high')),
+        Step(rewrites=(('gpt-6-astra', 'high'),), fallback=('gpt-6.1-sol', 'xhigh'), info=('gate',)),
+        Step(rewrites=(('gpt-6.1-sol', 'max'),), fallback=('gpt-6.1-sol', 'xhigh'), info=('gate',), nudge=NUDGE),
+        Step(rewrites=(('gpt-6-astra', 'high'),), fallback=('gpt-6.1-sol', 'xhigh'), info=('gate',), nudge=NUDGE),
+        Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), fallback=('gpt-6.1-sol', 'high'), patch=True, nudge=NUDGE),
+        Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), fallback=('gpt-6.1-sol', 'high'), patch=True, nudge=NUDGE),
+        Step(focus=('invented',), rewrites=(('gpt-6.1-sol', 'xhigh'),), fallback=('gpt-6.1-sol', 'high'), patch=True),
+        Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), fallback=('gpt-6.1-sol', 'high'), patch=True, nudge=NUDGE),
+        Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), fallback=('gpt-6.1-sol', 'high'), patch=True, nudge=NUDGE),
+        Step(rewrites=(('gpt-6.1-sol', 'xhigh'),), fallback=('gpt-6.1-sol', 'high'), patch=True, nudge=NUDGE),
+    ),
+    draft_keep=1,
+    fill=0.999,
+    render_cap=76,
+    merge_stack=True,
+)

@@ -1,22 +1,14 @@
-"""Miner entry point: the competition runtime supplies one prompt image, the round seed and the witness client.
-
-Live runs: python main.py --prompts prompts.txt --seed PUBLISHED_SEED --wallet-name NAME --wallet-hotkey HOTKEY
-"""
-
 from __future__ import annotations
-
-import os
-
-# One BLAS/OpenMP thread: numpy otherwise starts a thread and about 40 MB of address space per CPU core at import, which can
-# pass the replay sandbox's thread and address-space limits on a many-core host. Set before anything imports numpy.
-for _name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
-    os.environ.setdefault(_name, "1")
 
 import argparse
 import asyncio
+import os
 from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any
+
+for _name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+    os.environ.setdefault(_name, "1")
 
 from miner404.pipeline import run
 from miner404.versions import ACTIVE_PLAN
@@ -25,8 +17,6 @@ __all__ = ["generate"]
 
 
 class _Bridge:
-    """Blocking create() and render() over the async witness, for the pipeline's worker threads."""
-
     def __init__(self, witness: Any, loop: asyncio.AbstractEventLoop) -> None:
         self._witness = witness
         self._loop = loop
@@ -47,9 +37,9 @@ async def generate(image: bytes, seed: int, witness: Any) -> str | None:
 
 
 async def main() -> None:
-    from miner_runtime.batch import run as run_batch  # live runner only; generation and replay never import it
+    from miner_runtime.batch import run as run_batch
 
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description="Generate Three.js modules for the round's prompt images.")
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--prompts", type=Path, help="text file with one image URL per line")
     inputs.add_argument("--image", action="append", help="image file or HTTP(S) URL; repeat for a small batch")

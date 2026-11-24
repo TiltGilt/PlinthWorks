@@ -1,5 +1,3 @@
-"""Encode and crop images for OpenAI image inputs. Numpy and Pillow only, and deterministic for replay."""
-
 import base64
 import io
 
@@ -21,7 +19,6 @@ def data_url(image: bytes) -> str:
 
 
 def to_jpeg(image: Image.Image | bytes) -> bytes:
-    """JPEG, smaller than PNG, so many images fit the 8 MiB request limit; no chroma subsampling, to keep fine colour."""
     if isinstance(image, bytes):
         image = Image.open(io.BytesIO(image))
     buffer = io.BytesIO()
@@ -30,11 +27,6 @@ def to_jpeg(image: Image.Image | bytes) -> bytes:
 
 
 def zoomed_views(grid: bytes, columns: int = 2, rows: int = 2) -> list[bytes]:
-    """Each tile of a gap-free render grid on white, cropped close to the object at the same scale for every tile.
-
-    The object fills only a small part of the judge's frame, so this shows the model its own details at the judge's
-    resolution instead of a small picture of them.
-    """
     image = Image.open(io.BytesIO(grid)).convert("RGB")
     pixels = np.asarray(image)
     width, height = image.width // columns, image.height // rows
@@ -65,7 +57,6 @@ def zoomed_views(grid: bytes, columns: int = 2, rows: int = 2) -> list[bytes]:
 
 
 def view_sheet(views: list[bytes]) -> bytes:
-    """A 2x2 sheet of close-up views for comparing many candidates in one request."""
     gap = 6
     sheet = Image.new("RGB", (2 * SHEET_TILE + gap, 2 * SHEET_TILE + gap), (200, 200, 200))
     for index, view in enumerate(views):
@@ -76,7 +67,6 @@ def view_sheet(views: list[bytes]) -> bytes:
 
 
 def object_closeup(image: bytes) -> bytes | None:
-    """The photo cropped to its object, or None when the object already fills most of the photo or cannot be found."""
     photo = Image.open(io.BytesIO(image)).convert("RGB")
     small = np.asarray(photo.resize((256, 256), Image.Resampling.BILINEAR), dtype=np.float32)
     border = np.concatenate([small[0], small[-1], small[:, 0], small[:, -1]])

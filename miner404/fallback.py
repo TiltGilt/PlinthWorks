@@ -1,9 +1,3 @@
-"""Last-resort module when no candidate validates: a smooth blob in the target's dominant color.
-
-It almost certainly loses its duels, but a delivered asset can still draw or beat an opponent with no output,
-while returning None always loses.
-"""
-
 from __future__ import annotations
 
 import io
@@ -23,7 +17,6 @@ TEMPLATE = """export default function generate(THREE) {
 
 
 def dominant_color(image: bytes) -> str:
-    """Median color of the central region of the target, as six hex digits."""
     pixels = Image.open(io.BytesIO(image)).convert("RGB").resize((64, 64), Image.Resampling.BILINEAR)
     center = np.asarray(pixels, dtype=np.uint8)[16:48, 16:48].reshape(-1, 3)
     red, green, blue = (int(v) for v in np.median(center, axis=0))
